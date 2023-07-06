@@ -60,7 +60,13 @@ fn fetch_env(name: &str) -> Result<String> {
     env::var(name).map_err(|e| format!("Cannot get environment variable {}: {}", name, e).into())
 }
 
-pub fn run_tc<I, G, C, T, U, S, V, O>(options: O, init_fn: I, gen_fn: G, check_fn: C) -> Result<()>
+pub fn run_tc<I, G, C, T, U, S, V, O>(
+    options: O,
+    init_fn: I,
+    gen_fn: G,
+    check_fn: C,
+    valid_points: bool,
+) -> Result<()>
 where
     O: Into<RunOptions>,
     S: IntoIterator<Item = T>,
@@ -122,22 +128,24 @@ where
     }
     writeln!(fout)?;
     writeln!(fout, "Score: {}/{}", tc_ok, tc_n)?;
-    match (
-        fetch_env("TAL_META_EXP_TOKEN"),
-        fetch_env("TAL_EXT_EXAM_DB"),
-    ) {
-        (Ok(token), Ok(db_path)) => {
-            let conn = Connection::open(db_path)?;
-            let problem = fetch_env("TAL_META_CODENAME")?;
-            let address = fetch_env("TAL_META_EXP_ADDRESS")?;
-            let source = fs::read(format!("{}/source", fetch_env("TAL_META_INPUT_FILES")?))?;
-            conn.execute(
+    if valid_points {
+        match (
+            fetch_env("TAL_META_EXP_TOKEN"),
+            fetch_env("TAL_EXT_EXAM_DB"),
+        ) {
+            (Ok(token), Ok(db_path)) => {
+                let conn = Connection::open(db_path)?;
+                let problem = fetch_env("TAL_META_CODENAME")?;
+                let address = fetch_env("TAL_META_EXP_ADDRESS")?;
+                let source = fs::read(format!("{}/source", fetch_env("TAL_META_INPUT_FILES")?))?;
+                conn.execute(
                 "INSERT INTO submissions (user_id, problem, address, score, source) VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![token, problem, address, tc_ok, source],
             )?;
-        }
-        _ => {}
-    };
+            }
+            _ => {}
+        };
+    }
     Ok(())
 }
 
