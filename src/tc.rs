@@ -71,17 +71,17 @@ where
     O: Into<RunOptions>,
     S: IntoIterator<Item = T>,
     V: Into<Verdict>,
-    I: FnOnce(&str) -> Result<S>,
+    I: FnOnce(Option<&str>) -> Result<S>,
     G: Fn(T) -> Result<U>,
     C: Fn(U) -> Result<V>,
 {
     let options = options.into();
-    let subtask = fetch_env("TAL_size")?;
+    let subtask = fetch_env("TAL_size").ok();
     let output_dir = fetch_env("TAL_META_OUTPUT_FILES")?;
     let mut fout = File::create(format!("{output_dir}/result.txt"))?;
     let mut tc_ok = 0;
     let mut tc_n = 0;
-    let iter = init_fn(&subtask)?.into_iter();
+    let iter = init_fn(subtask.as_deref())?.into_iter();
     let total_tc_n = match iter.size_hint() {
         (n, Some(m)) if n == m => n,
         _ => return Err("Cannot get the number of test cases".into()),
