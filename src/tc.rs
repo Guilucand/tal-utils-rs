@@ -1,8 +1,10 @@
+use chrono::NaiveDate;
 use rusqlite::{params, Connection};
 use std::error::Error;
 use std::fs::File;
 use std::io::{stdout, Write};
 use std::iter::Iterator;
+use std::path::PathBuf;
 use std::time::Instant;
 use std::{env, fs};
 
@@ -58,6 +60,47 @@ impl Default for RunOptions {
 
 fn fetch_env(name: &str) -> Result<String> {
     env::var(name).map_err(|e| format!("Cannot get environment variable {}: {}", name, e).into())
+}
+
+fn get_multiplier(title: &str) -> u64 {
+    let tal_meta_dir = env::var("TAL_META_DIR").expect("TAL_META_DIR not set");
+    let scores_path = PathBuf::from(tal_meta_dir)
+        .parent()
+        .unwrap()
+        .join("scores.yaml");
+
+    if !scores_path.exists() {
+        return 1;
+    }
+
+    let scores_content = fs::read_to_string(scores_path).expect("Unable to read scores.yaml");
+    let mappings: serde_yaml::Value = serde_yaml::from_str(&scores_content).expect("Invalid YAML");
+
+    let Some(scores) = mappings.get(title) else {
+        return 1;
+    };
+    let Some(score_list) = scores.as_sequence() else {
+        return 1;
+    };
+    for score in score_list {
+        if let Some(expiration_date) = score.get("expiration_date") {
+            if let Some(expiration_date_str) = expiration_date.as_str() {
+                let today = chrono::Local::now().date_naive();
+                let expiration_date = NaiveDate::parse_from_str(expiration_date_str, "%Y-%m-%d")
+                    .expect("Invalid date format");
+
+                if expiration_date >= today {
+                    if let Some(multiplier) = score.get("multiplier") {
+                        if let Some(multiplier_value) = multiplier.as_u64() {
+                            return multiplier_value;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    1
 }
 
 pub fn run_tc<I, G, C, T, U, S, V, O>(
@@ -138,9 +181,18 @@ where
                 let problem = fetch_env("TAL_META_CODENAME")?;
                 let address = fetch_env("TAL_META_EXP_ADDRESS")?;
                 let source = fs::read(format!("{}/source", fetch_env("TAL_META_INPUT_FILES")?))?;
+
                 conn.execute(
-                "INSERT INTO submissions (user_id, problem, address, score, source) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![token, problem, address, tc_ok, source],
+                "INSERT INTO submissions (user_id, problem, address, subtime, score, multiplier, source) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    token,
+                    problem,
+                    address,
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string(),
+                    tc_ok,
+                    get_multiplier(&problem),
+                    source
+                ],
             )?;
             }
             _ => {}
